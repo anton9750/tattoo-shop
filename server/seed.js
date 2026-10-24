@@ -22,12 +22,12 @@ const seedArtists = [
   { id: 'clara-munch', name: 'Clara Munch', studio: 'Rosenhave Tattoo', city: 'Odense', styles: ['Finelinje', 'Akvarel'], bio: 'Bløde, feminine motiver med fine detaljer — blomster, insekter og små tekst-tatoveringer.', instagram: 'instagram.com/rosenhave.clara', bookingLeadTime: 'Ventetid: ca. 3 uger', depositDkk: 450, rating: 4.8, reviewCount: 72 },
 ]
 
-export function seedIfEmpty() {
-  if (db.listArtists().length > 0) return
+export async function seedIfEmpty() {
+  if ((await db.listArtists()).length > 0) return
 
   for (const artist of seedArtists) {
     const createdAt = new Date().toISOString()
-    db.createArtist({
+    await db.createArtist({
       ...artist,
       userId: null,
       avatar: `https://picsum.photos/seed/${artist.id}/160/160`,
@@ -41,7 +41,7 @@ export function seedIfEmpty() {
       const title = titles[i % titles.length]
       const tall = i % 3 === 0
       const seed = `${artist.id}-design-${i}`
-      db.createDesign({
+      await db.createDesign({
         id: seed,
         artistId: artist.id,
         title,

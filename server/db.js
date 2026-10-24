@@ -1,84 +1,86 @@
-import { DatabaseSync } from 'node:sqlite'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import pg from 'pg'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const DATA_DIR = join(__dirname, 'data')
-const DB_FILE = join(DATA_DIR, 'inkmap.sqlite')
+const { Pool } = pg
 
-mkdirSync(DATA_DIR, { recursive: true })
-const isNewDatabase = !existsSync(DB_FILE)
+const DATABASE_URL = process.env.DATABASE_URL
+if (!DATABASE_URL) {
+  throw new Error('DATABASE_URL is not set — check server/.env')
+}
 
-const conn = new DatabaseSync(DB_FILE)
-conn.exec('PRAGMA journal_mode = WAL')
-conn.exec('PRAGMA foreign_keys = ON')
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  ssl: DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
+})
 
-conn.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    email TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    artist_id TEXT NOT NULL,
-    reset_token TEXT,
-    reset_token_expires TEXT,
-    created_at TEXT NOT NULL
-  );
+async function migrate() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      artist_id TEXT NOT NULL,
+      reset_token TEXT,
+      reset_token_expires TEXT,
+      created_at TEXT NOT NULL
+    );
 
-  CREATE TABLE IF NOT EXISTS artists (
-    id TEXT PRIMARY KEY,
-    user_id TEXT,
-    name TEXT NOT NULL,
-    studio TEXT NOT NULL,
-    city TEXT NOT NULL,
-    styles TEXT NOT NULL,
-    bio TEXT NOT NULL DEFAULT '',
-    avatar TEXT NOT NULL,
-    instagram TEXT NOT NULL DEFAULT '',
-    booking_lead_time TEXT NOT NULL DEFAULT '',
-    deposit_dkk INTEGER NOT NULL DEFAULT 0,
-    rating REAL NOT NULL DEFAULT 0,
-    review_count INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
-  );
+    CREATE TABLE IF NOT EXISTS artists (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      name TEXT NOT NULL,
+      studio TEXT NOT NULL,
+      city TEXT NOT NULL,
+      styles TEXT NOT NULL,
+      bio TEXT NOT NULL DEFAULT '',
+      avatar TEXT NOT NULL,
+      instagram TEXT NOT NULL DEFAULT '',
+      booking_lead_time TEXT NOT NULL DEFAULT '',
+      deposit_dkk INTEGER NOT NULL DEFAULT 0,
+      rating REAL NOT NULL DEFAULT 0,
+      review_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
 
-  CREATE TABLE IF NOT EXISTS designs (
-    id TEXT PRIMARY KEY,
-    artist_id TEXT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
-    style TEXT NOT NULL,
-    image TEXT NOT NULL,
-    width INTEGER NOT NULL,
-    height INTEGER NOT NULL
-  );
+    CREATE TABLE IF NOT EXISTS designs (
+      id TEXT PRIMARY KEY,
+      artist_id TEXT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      style TEXT NOT NULL,
+      image TEXT NOT NULL,
+      width INTEGER NOT NULL,
+      height INTEGER NOT NULL
+    );
 
-  CREATE TABLE IF NOT EXISTS bookings (
-    id TEXT PRIMARY KEY,
-    artist_id TEXT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
-    design_id TEXT,
-    name TEXT NOT NULL,
-    email TEXT NOT NULL,
-    phone TEXT NOT NULL,
-    placement TEXT NOT NULL,
-    size TEXT NOT NULL,
-    preferred_dates TEXT NOT NULL DEFAULT '',
-    message TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'ny',
-    created_at TEXT NOT NULL
-  );
+    CREATE TABLE IF NOT EXISTS bookings (
+      id TEXT PRIMARY KEY,
+      artist_id TEXT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+      design_id TEXT,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      placement TEXT NOT NULL,
+      size TEXT NOT NULL,
+      preferred_dates TEXT NOT NULL DEFAULT '',
+      message TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'ny',
+      created_at TEXT NOT NULL
+    );
 
-  CREATE TABLE IF NOT EXISTS messages (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    email TEXT NOT NULL,
-    message TEXT NOT NULL,
-    created_at TEXT NOT NULL
-  );
+    CREATE TABLE IF NOT EXISTS messages (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      message TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
 
-  CREATE INDEX IF NOT EXISTS idx_designs_artist ON designs(artist_id);
-  CREATE INDEX IF NOT EXISTS idx_bookings_artist ON bookings(artist_id);
-`)
+    CREATE INDEX IF NOT EXISTS idx_designs_artist ON designs(artist_id);
+    CREATE INDEX IF NOT EXISTS idx_bookings_artist ON bookings(artist_id);
+  `)
+}
+
+const migrated = migrate()
 
 function artistRowToObject(row) {
   if (!row) return undefined
@@ -112,45 +114,57 @@ function bookingRowToObject(row) {
   }
 }
 
+async function query(text, params) {
+  await migrated
+  return pool.query(text, params)
+}
+
 export const db = {
   id: () => randomUUID(),
 
   // ---- users ----
-  createUser({ id, email, passwordHash, artistId }) {
-    conn
-      .prepare('INSERT INTO users (id, email, password_hash, artist_id, created_at) VALUES (?, ?, ?, ?, ?)')
-      .run(id, email, passwordHash, artistId, new Date().toISOString())
+  async createUser({ id, email, passwordHash, artistId }) {
+    await query('INSERT INTO users (id, email, password_hash, artist_id, created_at) VALUES ($1, $2, $3, $4, $5)', [
+      id,
+      email,
+      passwordHash,
+      artistId,
+      new Date().toISOString(),
+    ])
   },
-  findUserByEmail(email) {
-    return conn.prepare('SELECT * FROM users WHERE lower(email) = lower(?)').get(email)
+  async findUserByEmail(email) {
+    const { rows } = await query('SELECT * FROM users WHERE lower(email) = lower($1)', [email])
+    return rows[0]
   },
-  findUserById(id) {
-    return conn.prepare('SELECT * FROM users WHERE id = ?').get(id)
+  async findUserById(id) {
+    const { rows } = await query('SELECT * FROM users WHERE id = $1', [id])
+    return rows[0]
   },
-  findUserByArtistId(artistId) {
-    return conn.prepare('SELECT * FROM users WHERE artist_id = ?').get(artistId)
+  async findUserByArtistId(artistId) {
+    const { rows } = await query('SELECT * FROM users WHERE artist_id = $1', [artistId])
+    return rows[0]
   },
-  setResetToken(userId, token, expiresAt) {
-    conn.prepare('UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?').run(token, expiresAt, userId)
+  async setResetToken(userId, token, expiresAt) {
+    await query('UPDATE users SET reset_token = $1, reset_token_expires = $2 WHERE id = $3', [token, expiresAt, userId])
   },
-  findUserByResetToken(token) {
-    return conn.prepare('SELECT * FROM users WHERE reset_token = ?').get(token)
+  async findUserByResetToken(token) {
+    const { rows } = await query('SELECT * FROM users WHERE reset_token = $1', [token])
+    return rows[0]
   },
-  updatePassword(userId, passwordHash) {
-    conn
-      .prepare('UPDATE users SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?')
-      .run(passwordHash, userId)
+  async updatePassword(userId, passwordHash) {
+    await query('UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL WHERE id = $2', [
+      passwordHash,
+      userId,
+    ])
   },
 
   // ---- artists ----
-  createArtist(artist) {
-    conn
-      .prepare(
-        `INSERT INTO artists
-          (id, user_id, name, studio, city, styles, bio, avatar, instagram, booking_lead_time, deposit_dkk, rating, review_count, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
+  async createArtist(artist) {
+    await query(
+      `INSERT INTO artists
+        (id, user_id, name, studio, city, styles, bio, avatar, instagram, booking_lead_time, deposit_dkk, rating, review_count, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      [
         artist.id,
         artist.userId,
         artist.name,
@@ -165,31 +179,35 @@ export const db = {
         artist.rating,
         artist.reviewCount,
         artist.createdAt,
-      )
+      ],
+    )
   },
-  getArtist(id) {
-    return artistRowToObject(conn.prepare('SELECT * FROM artists WHERE id = ?').get(id))
+  async getArtist(id) {
+    const { rows } = await query('SELECT * FROM artists WHERE id = $1', [id])
+    return artistRowToObject(rows[0])
   },
-  getArtistByUserId(userId) {
-    return artistRowToObject(conn.prepare('SELECT * FROM artists WHERE user_id = ?').get(userId))
+  async getArtistByUserId(userId) {
+    const { rows } = await query('SELECT * FROM artists WHERE user_id = $1', [userId])
+    return artistRowToObject(rows[0])
   },
-  listArtists({ style, city, q } = {}) {
+  async listArtists({ style, city, q } = {}) {
     let sql = 'SELECT * FROM artists WHERE 1=1'
     const params = []
     if (city) {
-      sql += ' AND city = ?'
       params.push(city)
+      sql += ` AND city = $${params.length}`
     }
     if (q) {
-      sql += ' AND (lower(name) LIKE ? OR lower(studio) LIKE ?)'
-      params.push(`%${q.toLowerCase()}%`, `%${q.toLowerCase()}%`)
+      params.push(`%${q.toLowerCase()}%`)
+      sql += ` AND (lower(name) LIKE $${params.length} OR lower(studio) LIKE $${params.length})`
     }
     sql += ' ORDER BY created_at DESC'
-    let rows = conn.prepare(sql).all(...params).map(artistRowToObject)
-    if (style) rows = rows.filter((a) => a.styles.includes(style))
-    return rows
+    const { rows } = await query(sql, params)
+    let artists = rows.map(artistRowToObject)
+    if (style) artists = artists.filter((a) => a.styles.includes(style))
+    return artists
   },
-  updateArtist(id, fields) {
+  async updateArtist(id, fields) {
     const columns = {
       name: 'name',
       studio: 'studio',
@@ -204,59 +222,65 @@ export const db = {
     const params = []
     for (const [key, column] of Object.entries(columns)) {
       if (fields[key] !== undefined) {
-        sets.push(`${column} = ?`)
         params.push(fields[key])
+        sets.push(`${column} = $${params.length}`)
       }
     }
     if (fields.styles !== undefined) {
-      sets.push('styles = ?')
       params.push(JSON.stringify(fields.styles))
+      sets.push(`styles = $${params.length}`)
     }
     if (sets.length === 0) return
     params.push(id)
-    conn.prepare(`UPDATE artists SET ${sets.join(', ')} WHERE id = ?`).run(...params)
+    await query(`UPDATE artists SET ${sets.join(', ')} WHERE id = $${params.length}`, params)
   },
 
   // ---- designs ----
-  listDesigns({ artistId, style, q } = {}) {
+  async listDesigns({ artistId, style, q } = {}) {
     let sql = 'SELECT * FROM designs WHERE 1=1'
     const params = []
     if (artistId) {
-      sql += ' AND artist_id = ?'
       params.push(artistId)
+      sql += ` AND artist_id = $${params.length}`
     }
     if (style) {
-      sql += ' AND style = ?'
       params.push(style)
+      sql += ` AND style = $${params.length}`
     }
     if (q) {
-      sql += ' AND lower(title) LIKE ?'
       params.push(`%${q.toLowerCase()}%`)
+      sql += ` AND lower(title) LIKE $${params.length}`
     }
-    return conn.prepare(sql).all(...params).map(designRowToObject)
+    const { rows } = await query(sql, params)
+    return rows.map(designRowToObject)
   },
-  getDesign(id) {
-    return designRowToObject(conn.prepare('SELECT * FROM designs WHERE id = ?').get(id))
+  async getDesign(id) {
+    const { rows } = await query('SELECT * FROM designs WHERE id = $1', [id])
+    return designRowToObject(rows[0])
   },
-  createDesign(design) {
-    conn
-      .prepare('INSERT INTO designs (id, artist_id, title, style, image, width, height) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(design.id, design.artistId, design.title, design.style, design.image, design.width, design.height)
+  async createDesign(design) {
+    await query('INSERT INTO designs (id, artist_id, title, style, image, width, height) VALUES ($1, $2, $3, $4, $5, $6, $7)', [
+      design.id,
+      design.artistId,
+      design.title,
+      design.style,
+      design.image,
+      design.width,
+      design.height,
+    ])
   },
-  deleteDesign(id, artistId) {
-    const result = conn.prepare('DELETE FROM designs WHERE id = ? AND artist_id = ?').run(id, artistId)
-    return result.changes > 0
+  async deleteDesign(id, artistId) {
+    const result = await query('DELETE FROM designs WHERE id = $1 AND artist_id = $2', [id, artistId])
+    return result.rowCount > 0
   },
 
   // ---- bookings ----
-  createBooking(booking) {
-    conn
-      .prepare(
-        `INSERT INTO bookings
-          (id, artist_id, design_id, name, email, phone, placement, size, preferred_dates, message, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
+  async createBooking(booking) {
+    await query(
+      `INSERT INTO bookings
+        (id, artist_id, design_id, name, email, phone, placement, size, preferred_dates, message, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [
         booking.id,
         booking.artistId,
         booking.designId ?? null,
@@ -269,28 +293,30 @@ export const db = {
         booking.message ?? '',
         booking.status,
         booking.createdAt,
-      )
+      ],
+    )
   },
-  listBookingsByArtist(artistId) {
-    return conn
-      .prepare('SELECT * FROM bookings WHERE artist_id = ? ORDER BY created_at DESC')
-      .all(artistId)
-      .map(bookingRowToObject)
+  async listBookingsByArtist(artistId) {
+    const { rows } = await query('SELECT * FROM bookings WHERE artist_id = $1 ORDER BY created_at DESC', [artistId])
+    return rows.map(bookingRowToObject)
   },
-  getBooking(id, artistId) {
-    return bookingRowToObject(conn.prepare('SELECT * FROM bookings WHERE id = ? AND artist_id = ?').get(id, artistId))
+  async getBooking(id, artistId) {
+    const { rows } = await query('SELECT * FROM bookings WHERE id = $1 AND artist_id = $2', [id, artistId])
+    return bookingRowToObject(rows[0])
   },
-  updateBookingStatus(id, artistId, status) {
-    conn.prepare('UPDATE bookings SET status = ? WHERE id = ? AND artist_id = ?').run(status, id, artistId)
+  async updateBookingStatus(id, artistId, status) {
+    await query('UPDATE bookings SET status = $1 WHERE id = $2 AND artist_id = $3', [status, id, artistId])
     return db.getBooking(id, artistId)
   },
 
   // ---- contact messages ----
-  createMessage(message) {
-    conn
-      .prepare('INSERT INTO messages (id, name, email, message, created_at) VALUES (?, ?, ?, ?, ?)')
-      .run(message.id, message.name, message.email, message.message, message.createdAt)
+  async createMessage(message) {
+    await query('INSERT INTO messages (id, name, email, message, created_at) VALUES ($1, $2, $3, $4, $5)', [
+      message.id,
+      message.name,
+      message.email,
+      message.message,
+      message.createdAt,
+    ])
   },
 }
-
-export { isNewDatabase }

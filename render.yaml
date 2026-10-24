@@ -2,15 +2,16 @@
 # deployed separately to GitHub Pages by .github/workflows/deploy.yml.
 #
 # Usage: on render.com, "New +" → "Blueprint" → connect this repo. Render
-# reads this file automatically. After the first deploy, set FRONTEND_URL
-# (and ALLOWED_ORIGINS if needed) to your real GitHub Pages URL.
+# reads this file automatically. After the first deploy:
+# - Set FRONTEND_URL to your real GitHub Pages origin (no path), e.g.
+#   https://your-username.github.io
+# - Fill in DATABASE_URL (a free Postgres database from neon.tech) and the
+#   R2_* values (free object storage from Cloudflare R2) — Render will prompt
+#   for these since they're marked `sync: false` below.
 #
 # Free-tier notes:
 # - The service sleeps after ~15 min idle; the first request after that can
 #   take 30-60s to wake up.
-# - The filesystem (and with it server/data/*.sqlite and server/uploads/) is
-#   wiped on every new deploy. Fine for a demo, not for real user data —
-#   see the README for what to do before going live for real.
 services:
   - type: web
     name: inkmap-api
@@ -24,6 +25,18 @@ services:
       - key: SESSION_SECRET
         generateValue: true
       - key: FRONTEND_URL
-        value: https://change-me.github.io/inkmap
+        value: https://change-me.github.io
       - key: PORT
         value: 4000
+      - key: DATABASE_URL
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_PUBLIC_URL
+        sync: false
