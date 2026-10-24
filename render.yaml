@@ -25,7 +25,7 @@ services:
       - key: SESSION_SECRET
         generateValue: true
       - key: FRONTEND_URL
-        value: https://change-me.github.io
+        sync: false
       - key: PORT
         value: 4000
       - key: DATABASE_URL
