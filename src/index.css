@@ -14,7 +14,36 @@
   --color-charcoal: #3a362c;
 }
 
+/* Dark is the base (current look). Light mode swaps which side of the
+   "ink on paper" concept is the surface vs. the text, so the same utility
+   classes (bg-ink, text-paper, etc.) just pick up different values. */
 :root {
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    color-scheme: light;
+    --color-ink: #f4efe2;
+    --color-ink-soft: #e9e0cc;
+    --color-paper: #1b1710;
+    --color-paper-dim: #5b5346;
+    --color-charcoal: #d9cfb6;
+    --color-brass: #7a5d28;
+  }
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --color-ink: #f4efe2;
+  --color-ink-soft: #e9e0cc;
+  --color-paper: #1b1710;
+  --color-paper-dim: #5b5346;
+  --color-charcoal: #d9cfb6;
+  --color-brass: #7a5d28;
+}
+
+:root[data-theme='dark'] {
   color-scheme: dark;
 }
 

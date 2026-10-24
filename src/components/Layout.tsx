@@ -1,6 +1,7 @@
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import CookieNotice from './CookieNotice'
+import ThemeToggle from './ThemeToggle'
 
 const navLink =
   'px-3 py-2 text-sm font-medium transition-colors hover:text-paper aria-[current=page]:text-paper'
@@ -35,6 +36,9 @@ export default function Layout() {
                 Log ind
               </NavLink>
             )}
+            <div className="ml-2">
+              <ThemeToggle />
+            </div>
           </nav>
         </div>
       </header>

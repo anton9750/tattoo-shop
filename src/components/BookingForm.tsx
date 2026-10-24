@@ -48,7 +48,7 @@ export default function BookingForm({ artist, preselectedDesignId, onClose }: Pr
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/80 p-4 py-10"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 py-10"
       onClick={onClose}
     >
       <div
