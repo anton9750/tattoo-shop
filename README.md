@@ -36,6 +36,10 @@ Uploadede motiver og profilbilleder sendes direkte til Cloudflare R2 — ikke ti
 lokale disk. Det betyder, de også overlever redeploys. Uden `R2_*` sat fejler upload med en
 tydelig fejlbesked; resten af siden (eksempeldata, browsing, booking) virker stadig.
 
+Billeder skaleres ned og konverteres til WebP, før de rammer R2 (motiver maks. 1600px bred,
+profilbilleder maks. 400px). Et telefonfoto på flere MB bliver typisk til et par hundrede KB —
+både for at holde sig inden for R2's gratis 10 GB, og fordi det gør siden hurtigere at indlæse.
+
 ## E-mail
 
 InkMap sender rigtige e-mails ved registrering, booking-forespørgsler, bekræftelse/afvisning

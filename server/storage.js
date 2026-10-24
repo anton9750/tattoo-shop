@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import sharp from 'sharp'
 
 const accountId = process.env.R2_ACCOUNT_ID
 const accessKeyId = process.env.R2_ACCESS_KEY_ID
@@ -20,12 +21,23 @@ export function storageConfigured() {
   return configured
 }
 
-export async function uploadImage(buffer, key, contentType) {
+// Every upload is resized down and re-encoded as WebP before it reaches R2 —
+// a phone photo that comes in at several MB typically lands well under 500KB,
+// with no visible quality loss at the sizes these images are shown at.
+export async function uploadImage(buffer, key, { maxWidth } = {}) {
   if (!client) {
     throw new Error('Billede-upload er ikke konfigureret endnu (mangler R2-miljøvariabler).')
   }
-  await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: buffer, ContentType: contentType }))
-  return `${publicUrl}/${key}`
+
+  const optimized = await sharp(buffer)
+    .rotate() // auto-orient using the photo's EXIF data, then strip metadata
+    .resize({ width: maxWidth, withoutEnlargement: true })
+    .webp({ quality: 82 })
+    .toBuffer()
+
+  const webpKey = key.replace(/\.[^./]+$/, '.webp')
+  await client.send(new PutObjectCommand({ Bucket: bucket, Key: webpKey, Body: optimized, ContentType: 'image/webp' }))
+  return `${publicUrl}/${webpKey}`
 }
 
 export async function deleteImage(url) {

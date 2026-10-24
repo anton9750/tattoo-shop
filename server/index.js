@@ -44,9 +44,13 @@ const upload = multer({
   },
 })
 
+// Avatars only ever display small (160px), so they're capped tighter than
+// portfolio designs, which are shown larger and benefit from more detail.
+const MAX_WIDTH = { avatars: 400, designs: 1600 }
+
 async function uploadToStorage(file, folder) {
   const key = `${folder}/${db.id()}${extname(file.originalname)}`
-  return storage.uploadImage(file.buffer, key, file.mimetype)
+  return storage.uploadImage(file.buffer, key, { maxWidth: MAX_WIDTH[folder] })
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
