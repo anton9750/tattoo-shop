@@ -1,0 +1,29 @@
+# Render Blueprint — deploys only the backend (server/). The frontend is
+# deployed separately to GitHub Pages by .github/workflows/deploy.yml.
+#
+# Usage: on render.com, "New +" → "Blueprint" → connect this repo. Render
+# reads this file automatically. After the first deploy, set FRONTEND_URL
+# (and ALLOWED_ORIGINS if needed) to your real GitHub Pages URL.
+#
+# Free-tier notes:
+# - The service sleeps after ~15 min idle; the first request after that can
+#   take 30-60s to wake up.
+# - The filesystem (and with it server/data/*.sqlite and server/uploads/) is
+#   wiped on every new deploy. Fine for a demo, not for real user data —
+#   see the README for what to do before going live for real.
+services:
+  - type: web
+    name: inkmap-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run start
+    envVars:
+      - key: NODE_VERSION
+        value: 22.14.0
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        value: https://change-me.github.io/inkmap
+      - key: PORT
+        value: 4000

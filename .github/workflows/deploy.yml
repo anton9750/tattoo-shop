@@ -1,0 +1,61 @@
+name: Deploy frontend to GitHub Pages
+
+# Builds and publishes only the frontend (src/) as a static site.
+# The backend (server/) is NOT deployed by this workflow — see server/README
+# or the project README for how to host it (e.g. Render) and set VITE_API_URL
+# below as a repository variable so the built site knows where to find it.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        env:
+          # Set this as a repository variable (Settings → Secrets and variables
+          # → Actions → Variables) once the backend is deployed, e.g.
+          # https://inkmap-api.onrender.com — otherwise the live site won't be
+          # able to reach the API.
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+        run: npm run build -- --base=/${{ github.event.repository.name }}/
+
+      - name: Prepare for GitHub Pages (SPA fallback, skip Jekyll)
+        run: |
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

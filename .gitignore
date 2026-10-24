@@ -1,0 +1,15 @@
+node_modules
+dist
+dist-ssr
+*.local
+
+# server runtime data — never commit secrets or user data
+server/.env
+server/data
+server/uploads
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
